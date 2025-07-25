@@ -8,7 +8,6 @@ import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
 
-# Konstanta
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
 DEFAULT_MODEL_PATH = "offensive_model.pkl"
@@ -22,7 +21,6 @@ IDIOM_LANGUAGES = {
     "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
 
-# Caching model
 @st.cache_resource
 def load_roberta():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -37,11 +35,9 @@ def load_sbert():
 tokenizer, model = load_roberta()
 sbert = load_sbert()
 
-# --- Sidebar Navigation ---
 st.sidebar.title("🛍️ Navigasi")
 page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-# --- Halaman Dashboard ---
 if page == "🏠 Dashboard":
     st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
     st.markdown("""
@@ -54,7 +50,6 @@ if page == "🏠 Dashboard":
     > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
     """)
 
-# --- Halaman Deteksi ---
 elif page == "🛡️ Deteksi Teks":
     st.title("🛡️ Deteksi Konten Ofensif")
     input_text = st.text_area("Masukkan teks:")
@@ -73,15 +68,11 @@ elif page == "🛡️ Deteksi Teks":
             else:
                 st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# ================================
-# Analisis Idiom berdasarkan Input
-# ================================
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
     st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
-    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Idiom": ["Break a leg", "猫の手も借りたい"],
@@ -123,9 +114,16 @@ elif page == "🧠 Analisis Idiom":
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
                     lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
-                    valid = 1 if sim.item() > 0.3 else -1
+                    sim_score = sim.item()
 
-                    reason = f"'{idiom}' berarti: {meaning}."
+                    valid = 1 if sim_score > 0.35 else 0 if sim_score > 0.2 else -1
+                    validity_note = {
+                        1: "✅ Valid Idiom",
+                        0: "⚠️ Ragu-Ragu",
+                        -1: "❌ Tidak Valid"
+                    }[valid]
+
+                    reason = f"'{idiom}' berarti: {meaning}. Validasi: {validity_note} (skor: {sim_score:.2f})"
                     try:
                         encoded_ex = tokenizer(meaning, return_tensors="pt", truncation=True)
                         decoded = tokenizer.decode(encoded_ex['input_ids'][0], skip_special_tokens=True)
@@ -133,17 +131,15 @@ elif page == "🧠 Analisis Idiom":
                     except:
                         example = "(No example generated)"
 
-                    name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
-
                     results.append({
                         "Language": lang,
                         "Idiom": idiom,
                         "Meaning": meaning,
+                        "Similarity": round(sim_score, 3),
+                        "Validated": valid,
                         "Reason": reason,
                         "Example": example,
-                        "Name": name,
-                        "Validated": valid,
-                        "BERT Known Since": "2019"
+                        "Model Known Since": "2019"
                     })
 
                 if results:
@@ -157,7 +153,6 @@ elif page == "🧠 Analisis Idiom":
             except Exception as e:
                 st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
-# --- Halaman Manajemen Data ---
 elif page == "🗂️ Manajemen Data":
     st.title("🗂️ Dataset dan Model")
     st.markdown("### ✍️ Tambah Contoh Teks")
