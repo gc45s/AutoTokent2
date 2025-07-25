@@ -5,29 +5,13 @@ import numpy as np
 import pandas as pd
 import os
 import joblib
+from sentence_transformers import SentenceTransformer, util
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
 DEFAULT_MODEL_PATH = "offensive_model.pkl"
 
-st.set_page_config(page_title="Deteksi Konten Ofensif", page_icon="🛡️", layout="centered")
-
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f0f2f6;
-    }
-    .block-container {
-        padding: 2rem;
-        border-radius: 1rem;
-        background-color: white;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("🛡️ Deteksi Konten Ofensif - Twitter Roberta")
-st.caption("Model berdasarkan `cardiffnlp/twitter-roberta-base-offensive` dari Hugging Face")
+st.title("🛡️ Deteksi Konten Ofensif (Roberta Twitter)")
 
 @st.cache_resource
 def load_roberta():
@@ -40,15 +24,12 @@ tokenizer, model = load_roberta()
 
 LABELS = ["not-offensive", "offensive"]
 
-# ==== Bagian: Tambah Data Training ====
-st.markdown("### ✍️ Tambah Contoh Data ke Dataset")
+# Optional: Tambah data baru
+st.markdown("### ✍️ Tambah Contoh Data")
 with st.form("add_example"):
-    col1, col2 = st.columns(2)
-    with col1:
-        text_input = st.text_input("Teks baru")
-    with col2:
-        label_input = st.selectbox("Label", LABELS)
-    submit_btn = st.form_submit_button("➕ Simpan ke Dataset")
+    text_input = st.text_input("Masukkan teks:")
+    label_input = st.selectbox("Label", LABELS)
+    submit_btn = st.form_submit_button("Simpan ke CSV")
 
 if submit_btn:
     if text_input.strip() != "":
@@ -60,24 +41,23 @@ if submit_btn:
         else:
             df_combined = df_new
         df_combined.to_csv(DEFAULT_CSV, index=False)
-        st.success("✅ Data berhasil disimpan ke CSV.")
+        st.success("✅ Data disimpan.")
     else:
-        st.warning("⚠️ Teks tidak boleh kosong.")
+        st.warning("Teks tidak boleh kosong.")
 
-# ==== Tombol Reset ====
-st.markdown("### 🧹 Reset Dataset & Model")
-if st.button("Reset CSV dan Pickle"):
+# Reset CSV dan PKL
+if st.button("🧹 Reset Dataset dan Model"):
     if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
     if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
     st.success("✅ Dataset dan model berhasil direset.")
 
-# ==== Deteksi Konten ====
-st.markdown("### 🔍 Deteksi Konten Ofensif")
-input_text = st.text_area("Masukkan teks yang ingin diperiksa:", height=150)
+# Prediksi
+st.markdown("### 🔍 Cek Apakah Pesan Ofensif")
+input_text = st.text_area("Masukkan teks untuk diperiksa:")
 
-if st.button("🚨 Deteksi Sekarang"):
+if st.button("Deteksi"):
     if input_text.strip() == "":
-        st.warning("⚠️ Masukkan teks terlebih dahulu.")
+        st.warning("Teks tidak boleh kosong.")
     else:
         encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
         with torch.no_grad():
@@ -85,8 +65,43 @@ if st.button("🚨 Deteksi Sekarang"):
         probs = torch.nn.functional.softmax(output.logits, dim=-1).squeeze().numpy()
         pred = np.argmax(probs)
 
-        st.markdown("### Hasil Deteksi")
         if pred == 1:
             st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
         else:
-            st.success(f"✅ Tidak Ofensif ({probs[pred]:.2f} confidence)")
+            st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
+
+# Idiom Reasoning with Sentence-BERT
+st.markdown("### 🧠 Analisis Idiom per Bahasa")
+idioms = {
+    "English": ["Break a leg"],
+    "Japanese": ["猫の手も借りたい"]
+}
+
+sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+
+results = []
+for lang, phrases in idioms.items():
+    for idiom in phrases:
+        lang_context = f"Common idioms in {lang}"
+        idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+        lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+        sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+        valid = 1 if sim.item() > 0.3 else -1
+
+        reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi yang unik."
+        name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+
+        results.append({
+            "Language": lang,
+            "Idiom": idiom,
+            "Reason": reason,
+            "Name": name,
+            "Validated": valid,
+            "BERT Known Since": "2019"  # Mock year
+        })
+
+if results:
+    df_idioms = pd.DataFrame(results)
+    st.markdown("### 🧾 Hasil Tabel Nama dan Idiom")
+    st.dataframe(df_idioms)
+    df_idioms.to_csv("idiom_analysis.csv", index=False)
