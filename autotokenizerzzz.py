@@ -21,21 +21,7 @@ IDIOM_LANGUAGES = {
     "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
 
-# Cache terjemahan runtime
-translation_cache = {}
-
-def translate_text(text, target_lang):
-    key = (text, target_lang)
-    if key in translation_cache:
-        return translation_cache[key]
-    try:
-        translation = GoogleTranslator(source='auto', target=target_lang).translate(text)
-    except Exception:
-        translation = "(Translation failed)"
-    translation_cache[key] = translation
-    return translation
-
-# Caching model
+# Cache model dan tokenizer
 @st.cache_resource
 def load_roberta():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -50,16 +36,16 @@ def load_sbert():
 tokenizer, model = load_roberta()
 sbert = load_sbert()
 
-# --- Sidebar Navigation ---
+# Sidebar navigasi halaman
 st.sidebar.title("🛍️ Navigasi")
 page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-# --- Halaman Dashboard ---
+# Halaman Dashboard
 if page == "🏠 Dashboard":
     st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
     st.markdown("""
     Selamat datang di aplikasi analisis teks berbasis BERT. 
-    Aplikasi ini memiliki fitur:
+    Fitur:
     - Deteksi konten ofensif dari teks
     - Analisis idiom khas dari berbagai bahasa
     - Manajemen dataset dan pelatihan ulang model
@@ -67,7 +53,7 @@ if page == "🏠 Dashboard":
     > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
     """)
 
-# --- Halaman Deteksi ---
+# Halaman Deteksi Teks
 elif page == "🛡️ Deteksi Teks":
     st.title("🛡️ Deteksi Konten Ofensif")
     input_text = st.text_area("Masukkan teks:")
@@ -86,15 +72,12 @@ elif page == "🛡️ Deteksi Teks":
             else:
                 st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# ================================
-# Analisis Idiom berdasarkan Input
-# ================================
+# Halaman Analisis Idiom
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' diterjemahkan otomatis.")
 
-    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Language": ["English", "Japanese"],
@@ -119,7 +102,6 @@ elif page == "🧠 Analisis Idiom":
                     if not lang or not idiom:
                         continue
 
-                    # Map ke kode bahasa untuk GoogleTranslator
                     lang_code = {
                         "English": "en",
                         "Indonesian": "id",
@@ -128,7 +110,10 @@ elif page == "🧠 Analisis Idiom":
                         "Filipino": "tl"
                     }.get(lang, "en")
 
-                    meaning = translate_text(idiom, lang_code)
+                    try:
+                        meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
+                    except Exception:
+                        meaning = "(Translation failed)"
 
                     lang_context = f"Common idioms in {lang}"
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
@@ -160,7 +145,7 @@ elif page == "🧠 Analisis Idiom":
             except Exception as e:
                 st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
-# --- Halaman Manajemen Data ---
+# Halaman Manajemen Data
 elif page == "🗂️ Manajemen Data":
     st.title("🗂️ Dataset dan Model")
     st.markdown("### ✍️ Tambah Contoh Teks")
