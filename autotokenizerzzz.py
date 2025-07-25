@@ -5,34 +5,26 @@ import numpy as np
 import pandas as pd
 import os
 import joblib
-import re
-import string
+from sentence_transformers import SentenceTransformer, util
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
 DEFAULT_MODEL_PATH = "offensive_model.pkl"
-LABELS = ["not-offensive", "offensive"]
 
-st.title("🛡️ Deteksi Konten Ofensif (Twitter Roberta)")
+st.title("🛡️ Deteksi Konten Ofensif (Roberta Twitter)")
 
-# --- Preprocessing sesuai CardiffNLP ---
-def preprocess(text):
-    text = re.sub(r"@\w+", "", text)                     # Remove mentions
-    text = re.sub(r"http\S+", "", text)                  # Remove URLs
-    text = text.translate(str.maketrans("", "", string.punctuation))  # Remove punctuation
-    return text.strip()
-
-# --- Load Model dan Tokenizer ---
 @st.cache_resource
 def load_roberta():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, normalization=True)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
     model.eval()
     return tokenizer, model
 
 tokenizer, model = load_roberta()
 
-# --- Tambah data pelatihan manual ---
+LABELS = ["not-offensive", "offensive"]
+
+# Optional: Tambah data baru
 st.markdown("### ✍️ Tambah Contoh Data")
 with st.form("add_example"):
     text_input = st.text_input("Masukkan teks:")
@@ -53,13 +45,13 @@ if submit_btn:
     else:
         st.warning("Teks tidak boleh kosong.")
 
-# --- Reset Dataset dan Model ---
+# Reset CSV dan PKL
 if st.button("🧹 Reset Dataset dan Model"):
     if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
     if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
     st.success("✅ Dataset dan model berhasil direset.")
 
-# --- Deteksi Ofensif ---
+# Prediksi
 st.markdown("### 🔍 Cek Apakah Pesan Ofensif")
 input_text = st.text_area("Masukkan teks untuk diperiksa:")
 
@@ -67,8 +59,7 @@ if st.button("Deteksi"):
     if input_text.strip() == "":
         st.warning("Teks tidak boleh kosong.")
     else:
-        clean_text = preprocess(input_text)
-        encoded = tokenizer(clean_text, return_tensors="pt", truncation=True, padding=True)
+        encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
         with torch.no_grad():
             output = model(**encoded)
         probs = torch.nn.functional.softmax(output.logits, dim=-1).squeeze().numpy()
@@ -78,3 +69,39 @@ if st.button("Deteksi"):
             st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
         else:
             st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
+
+# Idiom Reasoning with Sentence-BERT
+st.markdown("### 🧠 Analisis Idiom per Bahasa")
+idioms = {
+    "English": ["Break a leg"],
+    "Japanese": ["猫の手も借りたい"]
+}
+
+sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+
+results = []
+for lang, phrases in idioms.items():
+    for idiom in phrases:
+        lang_context = f"Common idioms in {lang}"
+        idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+        lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+        sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+        valid = 1 if sim.item() > 0.3 else -1
+
+        reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi yang unik."
+        name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+
+        results.append({
+            "Language": lang,
+            "Idiom": idiom,
+            "Reason": reason,
+            "Name": name,
+            "Validated": valid,
+            "BERT Known Since": "2019"  # Mock year
+        })
+
+if results:
+    df_idioms = pd.DataFrame(results)
+    st.markdown("### 🧾 Hasil Tabel Nama dan Idiom")
+    st.dataframe(df_idioms)
+    df_idioms.to_csv("idiom_analysis.csv", index=False)
