@@ -72,16 +72,19 @@ elif page == "🛡️ Deteksi Teks":
             else:
                 st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# Halaman Analisis Idiom
+# ================================
+# Analisis Idiom berdasarkan Input
+# ================================
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' diterjemahkan otomatis.")
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
+    # Tabel input user (Idiom duluan, baru Language)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
-            "Language": ["English", "Japanese"],
-            "Idiom": ["Break a leg", "猫の手も借りたい"]
+            "Idiom": ["Break a leg", "猫の手も借りたい"],
+            "Language": ["English", "Japanese"]
         }),
         column_config={
             "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
@@ -96,12 +99,13 @@ elif page == "🧠 Analisis Idiom":
             try:
                 results = []
                 for _, row in idiom_input_df.iterrows():
-                    lang = row["Language"]
                     idiom = row["Idiom"]
+                    lang = row["Language"]
 
                     if not lang or not idiom:
                         continue
 
+                    # Deteksi target language
                     lang_code = {
                         "English": "en",
                         "Indonesian": "id",
