@@ -4,10 +4,11 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
+import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
 
-# Constants
+# Konstanta
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
 DEFAULT_MODEL_PATH = "offensive_model.pkl"
@@ -21,7 +22,7 @@ IDIOM_LANGUAGES = {
     "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
 
-# Load models with caching
+# Caching model
 @st.cache_resource
 def load_roberta():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -36,29 +37,30 @@ def load_sbert():
 tokenizer, model = load_roberta()
 sbert = load_sbert()
 
-# Sidebar Navigation
-st.sidebar.title("🛍️ Navigation")
-page = st.sidebar.radio("Select Page", ["🏠 Dashboard", "🛡️ Text Detection", "🧠 Idiom Analysis", "🗂️ Data Management"])
+# --- Sidebar Navigation ---
+st.sidebar.title("🛍️ Navigasi")
+page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-# Dashboard Page
+# --- Halaman Dashboard ---
 if page == "🏠 Dashboard":
-    st.title("📊 Offensive Content and Idiom Analysis Dashboard")
+    st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
     st.markdown("""
-    Welcome to the BERT-based text analysis application.  
-    Features include:
-    - Offensive content detection  
-    - Idiom analysis from various languages  
-    - Dataset management and model retraining  
-    \nPowered by `cardiffnlp/twitter-roberta-base-offensive` and `Sentence-BERT`
+    Selamat datang di aplikasi analisis teks berbasis BERT. 
+    Aplikasi ini memiliki fitur:
+    - Deteksi konten ofensif dari teks
+    - Analisis idiom khas dari berbagai bahasa
+    - Manajemen dataset dan pelatihan ulang model
+
+    > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
     """)
 
-# Offensive Text Detection Page
-elif page == "🛡️ Text Detection":
-    st.title("🛡️ Offensive Content Detection")
-    input_text = st.text_area("Enter text to analyze:")
-    if st.button("🔍 Detect"):
-        if not input_text.strip():
-            st.warning("Text cannot be empty.")
+# --- Halaman Deteksi ---
+elif page == "🛡️ Deteksi Teks":
+    st.title("🛡️ Deteksi Konten Ofensif")
+    input_text = st.text_area("Masukkan teks:")
+    if st.button("🔍 Deteksi"):
+        if input_text.strip() == "":
+            st.warning("Teks tidak boleh kosong.")
         else:
             encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
             with torch.no_grad():
@@ -67,16 +69,19 @@ elif page == "🛡️ Text Detection":
             pred = np.argmax(probs)
 
             if pred == 1:
-                st.error(f"❌ Offensive ({probs[pred]:.2f} confidence)")
+                st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
             else:
-                st.success(f"✅ Not Offensive ({probs[pred]:.2f} confidence)")
+                st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# Idiom Analysis Page
-elif page == "🧠 Idiom Analysis":
-    st.title("🧠 Idiom Analysis Based on Input Data")
-    st.info("Enter idioms and select language, then click **Analyze Idioms**. The 'Meaning' and 'Example Sentence' will be auto-translated.")
+# ================================
+# Analisis Idiom berdasarkan Input
+# ================================
+elif page == "🧠 Analisis Idiom":
+    st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    # Idiom input table with dynamic rows
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
+
+    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Idiom": ["Break a leg", "猫の手も借りたい"],
@@ -90,8 +95,8 @@ elif page == "🧠 Idiom Analysis":
         key="idiom_input_editor"
     )
 
-    if st.button("🔍 Analyze Idioms"):
-        with st.spinner("Calculating similarity and translating..."):
+    if st.button("🔍 Analisis Idiom"):
+        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
             try:
                 results = []
                 for _, row in idiom_input_df.iterrows():
@@ -101,7 +106,6 @@ elif page == "🧠 Idiom Analysis":
                     if not lang or not idiom:
                         continue
 
-                    # Language code for translation
                     lang_code = {
                         "English": "en",
                         "Indonesian": "id",
@@ -115,29 +119,19 @@ elif page == "🧠 Idiom Analysis":
                     except Exception:
                         meaning = "(Translation failed)"
 
-                    try:
-                        example_sentence = GoogleTranslator(source='auto', target=lang_code).translate(f'Example usage of "{idiom}"')
-                    except Exception:
-                        example_sentence = "(Example translation failed)"
-
-                    # Compute semantic similarity to language context
                     lang_context = f"Common idioms in {lang}"
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
                     lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     valid = 1 if sim.item() > 0.3 else -1
 
-                    # Articulate reason based on meaning and idiom
-                    reason = f"'{idiom}' means: {meaning}."
-
-                    # Generate simple unique name
+                    reason = f"Idiom '{idiom}' berarti '{meaning}', yang biasa digunakan untuk menggambarkan situasi tertentu dalam budaya {lang}."
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
-                        "Language": lang,
                         "Idiom": idiom,
+                        "Language": lang,
                         "Meaning": meaning,
-                        "Example Sentence": example_sentence,
                         "Reason": reason,
                         "Name": name,
                         "Validated": valid,
@@ -146,42 +140,39 @@ elif page == "🧠 Idiom Analysis":
 
                 if results:
                     df_idiom_result = pd.DataFrame(results)
-                    st.success("✅ Analysis complete.")
+                    st.success("✅ Analisis selesai.")
                     st.dataframe(df_idiom_result, use_container_width=True)
                     df_idiom_result.to_csv("idiom_analysis.csv", index=False)
                 else:
-                    st.warning("No valid idioms to analyze.")
+                    st.warning("Tidak ada idiom valid untuk dianalisis.")
 
             except Exception as e:
-                st.error(f"Failed during analysis: {e}")
+                st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
-# Data Management Page
-elif page == "🗂️ Data Management":
-    st.title("🗂️ Dataset and Model Management")
-    st.markdown("### ✍️ Add Example Text")
+# --- Halaman Manajemen Data ---
+elif page == "🗂️ Manajemen Data":
+    st.title("🗂️ Dataset dan Model")
+    st.markdown("### ✍️ Tambah Contoh Teks")
     with st.form("form_data"):
-        input_text = st.text_input("Text:")
+        input_text = st.text_input("Teks:")
         input_label = st.selectbox("Label", LABELS)
-        submit = st.form_submit_button("➕ Save")
+        submit = st.form_submit_button("➕ Simpan")
 
     if submit:
-        if input_text.strip():
+        if input_text.strip() != "":
             label_val = LABELS.index(input_label)
             df_new = pd.DataFrame([{"text": input_text, "label": label_val}])
             if os.path.exists(DEFAULT_CSV):
                 df_old = pd.read_csv(DEFAULT_CSV)
-                # Avoid duplicate entries
-                df_combined = pd.concat([df_old, df_new]).drop_duplicates(ignore_index=True)
+                df_combined = pd.concat([df_old, df_new]).drop_duplicates()
             else:
                 df_combined = df_new
             df_combined.to_csv(DEFAULT_CSV, index=False)
-            st.success("✅ Data added.")
+            st.success("✅ Data ditambahkan.")
         else:
-            st.warning("Text cannot be empty.")
+            st.warning("Teks tidak boleh kosong.")
 
     if st.button("🧹 Reset Dataset & Model"):
-        if os.path.exists(DEFAULT_CSV):
-            os.remove(DEFAULT_CSV)
-        if os.path.exists(DEFAULT_MODEL_PATH):
-            os.remove(DEFAULT_MODEL_PATH)
-        st.success("🗑️ Dataset and model cleared.")
+        if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
+        if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
+        st.success("🗑️ Dataset dan model dihapus.")
