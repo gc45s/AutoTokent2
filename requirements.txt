@@ -11,5 +11,3 @@ joblib
 sentence-transformers
 deep-translator
 psutil
-tkinter
-customtkinter
