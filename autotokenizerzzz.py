@@ -90,6 +90,8 @@ elif page == "🧠 Analisis Idiom":
         with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
             try:
                 results = []
+                similarity_scores = []
+
                 for _, row in idiom_input_df.iterrows():
                     lang = row["Language"]
                     idiom = row["Idiom"]
@@ -115,15 +117,8 @@ elif page == "🧠 Analisis Idiom":
                     lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     sim_score = sim.item()
+                    similarity_scores.append(sim_score)
 
-                    valid = 1 if sim_score > 0.35 else 0 if sim_score > 0.2 else -1
-                    validity_note = {
-                        1: "✅ Valid Idiom",
-                        0: "⚠️ Ragu-Ragu",
-                        -1: "❌ Tidak Valid"
-                    }[valid]
-
-                    reason = f"'{idiom}' berarti: {meaning}. Validasi: {validity_note} (skor: {sim_score:.2f})"
                     try:
                         encoded_ex = tokenizer(meaning, return_tensors="pt", truncation=True)
                         decoded = tokenizer.decode(encoded_ex['input_ids'][0], skip_special_tokens=True)
@@ -136,14 +131,32 @@ elif page == "🧠 Analisis Idiom":
                         "Idiom": idiom,
                         "Meaning": meaning,
                         "Similarity": round(sim_score, 3),
-                        "Validated": valid,
-                        "Reason": reason,
-                        "Example": example,
-                        "Model Known Since": "2019"
+                        "Example": example
                     })
 
                 if results:
                     df_idiom_result = pd.DataFrame(results)
+                    average_sim = np.mean(similarity_scores) if similarity_scores else 0
+                    thresholds = {
+                        "valid": average_sim * 1.00,
+                        "uncertain": average_sim * 0.70
+                    }
+
+                    def validate(row):
+                        if row["Similarity"] >= thresholds["valid"]:
+                            return 1
+                        elif row["Similarity"] >= thresholds["uncertain"]:
+                            return 0
+                        else:
+                            return -1
+
+                    df_idiom_result["Validated"] = df_idiom_result.apply(validate, axis=1)
+                    df_idiom_result["Reason"] = df_idiom_result.apply(
+                        lambda row: f"'{row['Idiom']}' berarti: {row['Meaning']}. Validasi: {['❌ Tidak Valid','⚠️ Ragu-Ragu','✅ Valid Idiom'][row['Validated']+1]} (skor: {row['Similarity']:.2f})",
+                        axis=1
+                    )
+                    df_idiom_result["Model Known Since"] = "2019"
+
                     st.success("✅ Analisis selesai.")
                     st.dataframe(df_idiom_result, use_container_width=True)
                     df_idiom_result.to_csv("idiom_analysis.csv", index=False)
