@@ -1,5 +1,6 @@
 import streamlit as st
 import torch
+import psutil
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
@@ -7,6 +8,26 @@ import os
 import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
+
+#---cek sistem secara default---
+def get_default_threads():
+    cpu_count = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    cpu_freq = psutil.cpu_freq()
+    freq_mhz = cpu_freq.current if cpu_freq else 0
+
+    # Cek sederhana: kalau core sedikit atau frekuensi rendah, set thread kecil
+    if cpu_count <= 2 or freq_mhz < 2000:
+        default_threads = 1
+    elif cpu_count <= 4 or freq_mhz < 3000:
+        default_threads = 2
+    else:
+        default_threads = min(4, cpu_count)  # maksimal 4 thread atau sesuai cpu_count
+
+    return default_threads
+
+default_threads = get_default_threads()
+torch.set_num_threads(default_threads)
+print(f"[INFO] Set PyTorch threads to {default_threads} based on detected CPU performance")
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
