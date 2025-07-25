@@ -4,6 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
+import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
 
@@ -21,7 +22,7 @@ IDIOM_LANGUAGES = {
     "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
 
-# Cache model dan tokenizer
+# Caching model
 @st.cache_resource
 def load_roberta():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -36,16 +37,16 @@ def load_sbert():
 tokenizer, model = load_roberta()
 sbert = load_sbert()
 
-# Sidebar navigasi halaman
+# --- Sidebar Navigation ---
 st.sidebar.title("🛍️ Navigasi")
 page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-# Halaman Dashboard
+# --- Halaman Dashboard ---
 if page == "🏠 Dashboard":
     st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
     st.markdown("""
     Selamat datang di aplikasi analisis teks berbasis BERT. 
-    Fitur:
+    Aplikasi ini memiliki fitur:
     - Deteksi konten ofensif dari teks
     - Analisis idiom khas dari berbagai bahasa
     - Manajemen dataset dan pelatihan ulang model
@@ -53,7 +54,7 @@ if page == "🏠 Dashboard":
     > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
     """)
 
-# Halaman Deteksi Teks
+# --- Halaman Deteksi ---
 elif page == "🛡️ Deteksi Teks":
     st.title("🛡️ Deteksi Konten Ofensif")
     input_text = st.text_area("Masukkan teks:")
@@ -80,7 +81,6 @@ elif page == "🧠 Analisis Idiom":
 
     st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
-    # Tabel input user (Idiom duluan, baru Language)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Idiom": ["Break a leg", "猫の手も借りたい"],
@@ -105,7 +105,6 @@ elif page == "🧠 Analisis Idiom":
                     if not lang or not idiom:
                         continue
 
-                    # Deteksi target language
                     lang_code = {
                         "English": "en",
                         "Indonesian": "id",
@@ -149,7 +148,7 @@ elif page == "🧠 Analisis Idiom":
             except Exception as e:
                 st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
-# Halaman Manajemen Data
+# --- Halaman Manajemen Data ---
 elif page == "🗂️ Manajemen Data":
     st.title("🗂️ Dataset dan Model")
     st.markdown("### ✍️ Tambah Contoh Teks")
