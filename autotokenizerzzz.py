@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
-from sentence_transformers import SentenceTransformer, util
+from sentence-transformers import SentenceTransformer, util
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
