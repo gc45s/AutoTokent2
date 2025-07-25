@@ -6,6 +6,7 @@ import pandas as pd
 import os
 import joblib
 from sentence_transformers import SentenceTransformer, util
+from deep_translator import GoogleTranslator
 
 # Konstanta
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
