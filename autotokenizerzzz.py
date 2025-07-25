@@ -1,61 +1,59 @@
 import streamlit as st
 from sentence_transformers import SentenceTransformer, util
 import pandas as pd
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+import torch
 
-st.title("🧠 Idiom Relevancy Analyzer with Sentence-BERT")
+st.title("🧠 Analisis Idiom dan Bahasa dengan BERT + Generative Reason")
 
-# Load model sekali saja (cache_resource)
 @st.cache_resource
-def load_model():
+def load_sbert():
     return SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
 
-model = load_model()
+@st.cache_resource
+def load_gpt2():
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    model = GPT2LMHeadModel.from_pretrained("gpt2")
+    model.eval()
+    return tokenizer, model
 
-# Data idiom dan konteks bahasa
-idioms = {
-    "English": ["Break a leg", "Piece of cake", "Spill the beans"],
-    "Japanese": ["猫の手も借りたい", "猿も木から落ちる", "一石二鳥"]
-}
+def generate_reason(prompt, tokenizer, model, max_length=60):
+    inputs = tokenizer.encode(prompt, return_tensors="pt")
+    outputs = model.generate(inputs, max_length=max_length, do_sample=True, temperature=0.7)
+    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Remove prompt from output
+    reason = text[len(prompt):].strip()
+    return reason
 
-contexts = {
-    "English": "Common English idioms used in everyday speech",
-    "Japanese": "日本語でよく使われる慣用句"
-}
+sbert = load_sbert()
+tokenizer_gpt2, model_gpt2 = load_gpt2()
 
-threshold = 0.4  # similarity threshold untuk relevansi
+with st.form("input_idiom"):
+    language = st.text_input("Masukkan nama bahasa (language):", "English")
+    idiom = st.text_input("Masukkan idiom:")
+    submitted = st.form_submit_button("Analisis")
 
 results = []
 
-for lang, idiom_list in idioms.items():
-    context_text = contexts[lang]
-    context_emb = model.encode(context_text, convert_to_tensor=True)
-    for idiom in idiom_list:
-        idiom_emb = model.encode(idiom, convert_to_tensor=True)
-        similarity = util.pytorch_cos_sim(idiom_emb, context_emb).item()
-        is_relevant = similarity > threshold
-        reason = (
-            f"Idiom '{idiom}' cocok dengan bahasa {lang} "
-            f"dengan skor similarity {similarity:.2f}."
-            if is_relevant
-            else f"Idiom '{idiom}' tidak umum dalam bahasa {lang} "
-            f"(skor similarity {similarity:.2f})."
-        )
-        results.append({
-            "Language": lang,
-            "Idiom": idiom,
-            "Similarity": similarity,
-            "Relevant": is_relevant,
-            "Reason": reason
-        })
+if submitted and idiom.strip() and language.strip():
+    idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+    context_text = f"Common idioms in {language}"
+    lang_emb = sbert.encode(context_text, convert_to_tensor=True)
 
-df_results = pd.DataFrame(results)
+    similarity = util.pytorch_cos_sim(idiom_emb, lang_emb).item()
+    valid = 1 if similarity > 0.3 else -1
 
-st.markdown("### Hasil Analisis Idiom per Bahasa")
-st.dataframe(df_results.style.applymap(
-    lambda v: 'background-color: #d4edda' if v is True else ('background-color: #f8d7da' if v is False else ''),
-    subset=['Relevant']
-))
+    prompt = f"Explain why the idiom '{idiom}' is meaningful in the {language} language: "
+    reason = generate_reason(prompt, tokenizer_gpt2, model_gpt2)
 
-st.markdown("### Penjelasan Per Idiom")
-for idx, row in df_results.iterrows():
-    st.write(f"- **{row['Idiom']}** ({row['Language']}): {row['Reason']}")
+    results.append({
+        "Language": language,
+        "Idiom": idiom,
+        "Similarity": similarity,
+        "Validated": valid,
+        "Reason": reason
+    })
+
+    df = pd.DataFrame(results)
+    st.markdown("### Hasil Analisis Idiom dengan Reason Generatif")
+    st.dataframe(df)
