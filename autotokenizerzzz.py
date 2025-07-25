@@ -1,59 +1,183 @@
+import streamlit as st
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import numpy as np
 import pandas as pd
+import os
+import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
 
-# Load Sentence BERT model
-sbert = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+# Konstanta
+MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
+DEFAULT_CSV = "user_training_data.csv"
+DEFAULT_MODEL_PATH = "offensive_model.pkl"
 
-# Example input data
-idiom_data = pd.DataFrame({
-    "Idiom": ["Break a leg", "猫の手も借りたい"],
-    "Language": ["English", "Japanese"]
-})
-
-LANG_CODE_MAP = {
-    "English": "en",
-    "Indonesian": "id",
-    "Japanese": "ja",
-    "Thai": "th",
-    "Filipino": "tl"
+LABELS = ["not-offensive", "offensive"]
+IDIOM_LANGUAGES = {
+    "English": ["Break a leg", "Piece of cake"],
+    "Indonesian": ["Buah bibir", "Meja hijau"],
+    "Japanese": ["猫の手も借りたい", "猿も木から落ちる"],
+    "Thai": ["จับปลาสองมือ", "แมวไม่อยู่หนูร่าเริง"],
+    "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
 
-def translate_idiom(idiom, target_lang_code):
-    try:
-        return GoogleTranslator(source='auto', target=target_lang_code).translate(idiom)
-    except Exception:
-        return "(Translation failed)"
+# Caching model
+@st.cache_resource
+def load_roberta():
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    model.eval()
+    return tokenizer, model
 
-def validate_and_reason(df):
-    results = []
-    for _, row in df.iterrows():
-        idiom = row['Idiom']
-        lang = row['Language']
-        lang_code = LANG_CODE_MAP.get(lang, 'en')
+@st.cache_resource
+def load_sbert():
+    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-        meaning = translate_idiom(idiom, lang_code)
-        idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
-        context_emb = sbert.encode(f"Common idioms in {lang}", convert_to_tensor=True)
-        similarity = util.pytorch_cos_sim(idiom_emb, context_emb).item()
+tokenizer, model = load_roberta()
+sbert = load_sbert()
 
-        valid = 1 if similarity > 0.3 else -1
-        reason = (f"Idiom '{idiom}' is commonly associated with the {lang} language. "
-                  f"Detected similarity score: {similarity:.2f}. Meaning: '{meaning}'.")
+# --- Sidebar Navigation ---
+st.sidebar.title("🛍️ Navigasi")
+page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-        results.append({
-            "Language": lang,
-            "Idiom": idiom,
-            "Meaning": meaning,
-            "Similarity": similarity,
-            "Validated": valid,
-            "Reason": reason
-        })
+# --- Halaman Dashboard ---
+if page == "🏠 Dashboard":
+    st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
+    st.markdown("""
+    Selamat datang di aplikasi analisis teks berbasis BERT. 
+    Aplikasi ini memiliki fitur:
+    - Deteksi konten ofensif dari teks
+    - Analisis idiom khas dari berbagai bahasa
+    - Manajemen dataset dan pelatihan ulang model
 
-    return pd.DataFrame(results)
+    > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
+    """)
 
-validated_df = validate_and_reason(idiom_data)
-print(validated_df)
+# --- Halaman Deteksi ---
+elif page == "🛡️ Deteksi Teks":
+    st.title("🛡️ Deteksi Konten Ofensif")
+    input_text = st.text_area("Masukkan teks:")
+    if st.button("🔍 Deteksi"):
+        if input_text.strip() == "":
+            st.warning("Teks tidak boleh kosong.")
+        else:
+            encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                output = model(**encoded)
+            probs = torch.nn.functional.softmax(output.logits, dim=-1).squeeze().numpy()
+            pred = np.argmax(probs)
 
-# Optionally save
-validated_df.to_csv("validated_idioms.csv", index=False)
+            if pred == 1:
+                st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
+            else:
+                st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
+
+# ================================
+# Analisis Idiom berdasarkan Input
+# ================================
+elif page == "🧠 Analisis Idiom":
+    st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
+
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
+
+    # Tabel input user (Meaning otomatis)
+    idiom_input_df = st.data_editor(
+        pd.DataFrame({
+            "Idiom": ["Break a leg", "猫の手も借りたい"],
+            "Language": ["English", "Japanese"]
+        }),
+        column_config={
+            "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="idiom_input_editor"
+    )
+
+    if st.button("🌐 Auto Translate Meaning"):
+        for i in range(len(idiom_input_df)):
+            lang = idiom_input_df.loc[i, "Language"]
+            idiom = idiom_input_df.loc[i, "Idiom"]
+            lang_code = {
+                "English": "en",
+                "Indonesian": "id",
+                "Japanese": "ja",
+                "Thai": "th",
+                "Filipino": "tl"
+            }.get(lang, "en")
+            try:
+                idiom_input_df.loc[i, "Meaning"] = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
+            except:
+                idiom_input_df.loc[i, "Meaning"] = "(Translation failed)"
+        st.experimental_rerun()
+
+    if st.button("🔍 Analisis Idiom"):
+        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
+            try:
+                results = []
+                for _, row in idiom_input_df.iterrows():
+                    lang = row["Language"]
+                    idiom = row["Idiom"]
+                    meaning = row.get("Meaning", "")
+
+                    if not lang or not idiom:
+                        continue
+
+                    lang_context = f"Common idioms in {lang}"
+                    idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+                    lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+                    sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+                    valid = 1 if sim.item() > 0.3 else -1
+
+                    reason = f"'{idiom}' berarti: {meaning}. Contoh: '{idiom}' digunakan dalam percakapan sehari-hari."
+                    name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+
+                    results.append({
+                        "Language": lang,
+                        "Idiom": idiom,
+                        "Meaning": meaning,
+                        "Reason": reason,
+                        "Name": name,
+                        "Validated": valid,
+                        "BERT Known Since": "2019"
+                    })
+
+                if results:
+                    df_idiom_result = pd.DataFrame(results)
+                    st.success("✅ Analisis selesai.")
+                    st.dataframe(df_idiom_result, use_container_width=True)
+                    df_idiom_result.to_csv("idiom_analysis.csv", index=False)
+                else:
+                    st.warning("Tidak ada idiom valid untuk dianalisis.")
+
+            except Exception as e:
+                st.error(f"Gagal memuat model atau melakukan analisis: {e}")
+
+# --- Halaman Manajemen Data ---
+elif page == "🗂️ Manajemen Data":
+    st.title("🗂️ Dataset dan Model")
+    st.markdown("### ✍️ Tambah Contoh Teks")
+    with st.form("form_data"):
+        input_text = st.text_input("Teks:")
+        input_label = st.selectbox("Label", LABELS)
+        submit = st.form_submit_button("➕ Simpan")
+
+    if submit:
+        if input_text.strip() != "":
+            label_val = LABELS.index(input_label)
+            df_new = pd.DataFrame([{"text": input_text, "label": label_val}])
+            if os.path.exists(DEFAULT_CSV):
+                df_old = pd.read_csv(DEFAULT_CSV)
+                df_combined = pd.concat([df_old, df_new]).drop_duplicates()
+            else:
+                df_combined = df_new
+            df_combined.to_csv(DEFAULT_CSV, index=False)
+            st.success("✅ Data ditambahkan.")
+        else:
+            st.warning("Teks tidak boleh kosong.")
+
+    if st.button("🧹 Reset Dataset & Model"):
+        if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
+        if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
+        st.success("🗑️ Dataset dan model dihapus.")
