@@ -81,6 +81,7 @@ elif page == "🧠 Analisis Idiom":
 
     st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
+    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Idiom": ["Break a leg", "猫の手も借りたい"],
@@ -99,8 +100,8 @@ elif page == "🧠 Analisis Idiom":
             try:
                 results = []
                 for _, row in idiom_input_df.iterrows():
-                    idiom = row["Idiom"]
                     lang = row["Language"]
+                    idiom = row["Idiom"]
 
                     if not lang or not idiom:
                         continue
@@ -124,7 +125,7 @@ elif page == "🧠 Analisis Idiom":
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     valid = 1 if sim.item() > 0.3 else -1
 
-                    reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi tertentu."
+                    reason = f"'{idiom}' berarti: {meaning}."
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
