@@ -4,6 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
+import joblib
 from sentence_transformers import SentenceTransformer, util
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
@@ -23,46 +24,69 @@ tokenizer, model = load_roberta()
 
 LABELS = ["not-offensive", "offensive"]
 
-# Load CSV
-def load_user_data():
-    if os.path.exists(DEFAULT_CSV):
-        return pd.read_csv(DEFAULT_CSV)
-    return pd.DataFrame(columns=["text", "label"])
-
-def save_user_data(df):
-    df.to_csv(DEFAULT_CSV, index=False)
-
-user_data = load_user_data()
-
-# Form Input
+# Optional: Tambah data baru
 st.markdown("### ✍️ Tambah Contoh Data")
 with st.form("add_example"):
-    new_text = st.text_input("Masukkan teks:")
+    text_input = st.text_input("Masukkan teks:")
     label_input = st.selectbox("Label", LABELS)
     submit_btn = st.form_submit_button("Simpan ke CSV")
 
 if submit_btn:
-    if new_text.strip() == "":
-        st.warning("Teks tidak boleh kosong.")
-    else:
-        new_entry = pd.DataFrame([{"text": new_text, "label": LABELS.index(label_input)}])
-        if new_text in user_data["text"].values:
-            st.warning("⚠️ Teks ini sudah ada dalam dataset.")
+    if text_input.strip() != "":
+        label_val = LABELS.index(label_input)
+        df_new = pd.DataFrame([{"text": text_input, "label": label_val}])
+        if os.path.exists(DEFAULT_CSV):
+            df_old = pd.read_csv(DEFAULT_CSV)
+            df_combined = pd.concat([df_old, df_new], ignore_index=True).drop_duplicates()
         else:
-            combined = pd.concat([user_data, new_entry], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["text"], keep="first")
-            save_user_data(combined)
-            user_data = combined
-            st.success("✅ Data disimpan.")
+            df_combined = df_new
+        df_combined.to_csv(DEFAULT_CSV, index=False)
+        st.success("✅ Data disimpan.")
 
-# Reset Dataset & Model
+        # Analisis idiom otomatis dari input
+        sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+        idiom_emb = sbert.encode(text_input, convert_to_tensor=True)
+
+        lang_idioms = {
+            "English": ["Break a leg", "Hit the sack", "Let the cat out of the bag"],
+            "Indonesian": ["Banting tulang", "Buah tangan", "Naik darah"],
+            "Japanese": ["猫の手も借りたい", "猿も木から落ちる"],
+            "Thai": ["น้ำขึ้นให้รีบตัก", "จับปลาสองมือ"],
+            "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
+        }
+
+        idiom_results = []
+
+        for lang, phrases in lang_idioms.items():
+            for phrase in phrases:
+                phrase_emb = sbert.encode(phrase, convert_to_tensor=True)
+                sim = util.pytorch_cos_sim(idiom_emb, phrase_emb).item()
+
+                if sim > 0.6:
+                    idiom_results.append({
+                        "Language": lang,
+                        "Idiom": phrase,
+                        "Similarity": f"{sim:.2f}",
+                        "Matched With Input": text_input
+                    })
+
+        if idiom_results:
+            df_matches = pd.DataFrame(idiom_results)
+            st.markdown("### 🧠 Hasil Analisis Idiom dari Input")
+            st.dataframe(df_matches)
+        else:
+            st.info("🔎 Tidak ditemukan idiom yang relevan dengan input.")
+
+    else:
+        st.warning("Teks tidak boleh kosong.")
+
+# Reset CSV dan PKL
 if st.button("🧹 Reset Dataset dan Model"):
     if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
     if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
-    user_data = pd.DataFrame(columns=["text", "label"])
     st.success("✅ Dataset dan model berhasil direset.")
 
-# Prediction
+# Prediksi
 st.markdown("### 🔍 Cek Apakah Pesan Ofensif")
 input_text = st.text_area("Masukkan teks untuk diperiksa:")
 
@@ -80,42 +104,3 @@ if st.button("Deteksi"):
             st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
         else:
             st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
-
-# Idiom-BERT Analysis
-st.markdown("### 🧠 Analisis Idiom per Bahasa")
-idioms = {
-    "English": ["Break a leg"],
-    "Indonesian": ["Buah bibir"],
-    "Japanese": ["猫の手も借りたい"],
-    "Thai": ["จับปลาสองมือ"],
-    "Filipino": ["Itaga mo sa bato"]
-}
-
-sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-
-results = []
-for lang, phrases in idioms.items():
-    for idiom in phrases:
-        lang_context = f"Common idioms in {lang}"
-        idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
-        lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
-        sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
-        valid = 1 if sim.item() > 0.3 else -1
-
-        reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi yang unik."
-        name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
-
-        results.append({
-            "Language": lang,
-            "Idiom": idiom,
-            "Reason": reason,
-            "Name": name,
-            "Validated": valid,
-            "BERT Known Since": "2019"
-        })
-
-if results:
-    df_idioms = pd.DataFrame(results)
-    st.markdown("### 🧾 Hasil Tabel Nama dan Idiom")
-    st.dataframe(df_idioms)
-    df_idioms.to_csv("idiom_analysis.csv", index=False)
