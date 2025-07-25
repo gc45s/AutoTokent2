@@ -1,59 +1,140 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer, util
-import pandas as pd
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from sentence_transformers import SentenceTransformer
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+import pandas as pd
+import os
+import joblib
 
-st.title("🧠 Analisis Idiom dan Bahasa dengan BERT + Generative Reason")
+# Config
+LANGUAGE_MODELS = {
+    "English": "cardiffnlp/twitter-roberta-base-offensive",
+    "Indonesian": "indolem/indobert-base-uncased",
+    "Japanese": "cl-tohoku/bert-base-japanese",
+    "Thai": "airesearch/wangchanberta-base-att-spm-uncased",
+    "Filipino": "bert-base-multilingual-cased"
+}
 
-@st.cache_resource
-def load_sbert():
-    return SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+# Use Sentence-BERT multilingual model for training embeddings
+SBERT_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-@st.cache_resource
-def load_gpt2():
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    model = GPT2LMHeadModel.from_pretrained("gpt2")
+st.title("🛡️ Multilingual Offensive Content Detector & Trainer")
+
+language = st.selectbox("Select Language", list(LANGUAGE_MODELS.keys()))
+
+# Paths for user data and models per language
+DATA_PATH = f"user_data_{language}.csv"
+MODEL_PATH = f"clf_model_{language}.pkl"
+
+@st.cache_resource(show_spinner=False)
+def load_hf_model(lang):
+    model_name = LANGUAGE_MODELS[lang]
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name)
     model.eval()
     return tokenizer, model
 
-def generate_reason(prompt, tokenizer, model, max_length=60):
-    inputs = tokenizer.encode(prompt, return_tensors="pt")
-    outputs = model.generate(inputs, max_length=max_length, do_sample=True, temperature=0.7)
-    text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    # Remove prompt from output
-    reason = text[len(prompt):].strip()
-    return reason
+@st.cache_resource(show_spinner=False)
+def load_sbert():
+    return SentenceTransformer(SBERT_MODEL_NAME)
 
-sbert = load_sbert()
-tokenizer_gpt2, model_gpt2 = load_gpt2()
+def load_user_data():
+    if os.path.exists(DATA_PATH):
+        return pd.read_csv(DATA_PATH)
+    else:
+        return pd.DataFrame(columns=["text", "label"])
 
-with st.form("input_idiom"):
-    language = st.text_input("Masukkan nama bahasa (language):", "English")
-    idiom = st.text_input("Masukkan idiom:")
-    submitted = st.form_submit_button("Analisis")
+def save_user_data(df):
+    df.to_csv(DATA_PATH, index=False)
 
-results = []
+def train_classifier(df, sbert_model):
+    if df.empty or len(df) < 2:
+        return None
+    embeddings = sbert_model.encode(df["text"].tolist())
+    clf = LogisticRegression(max_iter=1000)
+    clf.fit(embeddings, df["label"].values)
+    joblib.dump(clf, MODEL_PATH)
+    return clf
 
-if submitted and idiom.strip() and language.strip():
-    idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
-    context_text = f"Common idioms in {language}"
-    lang_emb = sbert.encode(context_text, convert_to_tensor=True)
+def load_classifier():
+    if os.path.exists(MODEL_PATH):
+        return joblib.load(MODEL_PATH)
+    else:
+        return None
 
-    similarity = util.pytorch_cos_sim(idiom_emb, lang_emb).item()
-    valid = 1 if similarity > 0.3 else -1
+# Load models
+hf_tokenizer, hf_model = load_hf_model(language)
+sbert_model = load_sbert()
 
-    prompt = f"Explain why the idiom '{idiom}' is meaningful in the {language} language: "
-    reason = generate_reason(prompt, tokenizer_gpt2, model_gpt2)
+# User data and classifier
+user_data = load_user_data()
+clf = load_classifier()
+if clf is None:
+    clf = train_classifier(user_data, sbert_model)
 
-    results.append({
-        "Language": language,
-        "Idiom": idiom,
-        "Similarity": similarity,
-        "Validated": valid,
-        "Reason": reason
-    })
+st.markdown("### 🔍 Offensive content detection using pretrained model")
+input_text = st.text_area(f"Enter {language} text for detection:")
 
-    df = pd.DataFrame(results)
-    st.markdown("### Hasil Analisis Idiom dengan Reason Generatif")
-    st.dataframe(df)
+if st.button("Detect Offensive Content with HF Model"):
+    if not input_text.strip():
+        st.warning("Please enter some text!")
+    else:
+        inputs = hf_tokenizer(input_text, return_tensors="pt", truncation=True, padding=True)
+        with torch.no_grad():
+            outputs = hf_model(**inputs)
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1).squeeze().tolist()
+        pred = probs.index(max(probs))
+        if pred == 1:
+            st.error(f"❌ Offensive content detected (confidence: {probs[pred]:.2f})")
+        else:
+            st.success(f"✅ Text is not offensive (confidence: {probs[pred]:.2f})")
+
+st.markdown("---")
+st.markdown("### 📝 Add new training example (trainable classifier)")
+
+with st.form("add_example_form"):
+    new_text = st.text_input(f"Enter new {language} text example:")
+    new_label = st.selectbox("Label", ["Not Offensive", "Offensive"])
+    submit = st.form_submit_button("Add Example")
+
+if submit:
+    if new_text.strip() == "":
+        st.warning("Text cannot be empty.")
+    else:
+        label_num = 1 if new_label == "Offensive" else 0
+        new_entry = pd.DataFrame([{"text": new_text, "label": label_num}])
+        user_data = pd.concat([user_data, new_entry], ignore_index=True)
+        save_user_data(user_data)
+        st.success("✅ Example added. Retraining classifier...")
+        clf = train_classifier(user_data, sbert_model)
+        if clf:
+            st.success("✅ Classifier retrained successfully.")
+        else:
+            st.warning("⚠️ Not enough data to train classifier yet.")
+
+st.markdown("---")
+if st.button("🧹 Reset user dataset and classifier"):
+    if os.path.exists(DATA_PATH):
+        os.remove(DATA_PATH)
+    if os.path.exists(MODEL_PATH):
+        os.remove(MODEL_PATH)
+    user_data = pd.DataFrame(columns=["text", "label"])
+    clf = None
+    st.success("✅ Dataset and classifier reset.")
+
+st.markdown("---")
+st.markdown("### 🔍 Offensive content detection using trained classifier")
+
+if clf and input_text.strip():
+    emb = sbert_model.encode([input_text])
+    pred = clf.predict(emb)[0]
+    proba = clf.predict_proba(emb)[0][pred]
+    if pred == 1:
+        st.error(f"❌ Offensive content detected by trained classifier (confidence: {proba:.2f})")
+    else:
+        st.success(f"✅ Text is not offensive by trained classifier (confidence: {proba:.2f})")
+elif input_text.strip():
+    st.info("ℹ️ Not enough training data to use trained classifier. Use pretrained model or add examples.")
+
