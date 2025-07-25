@@ -188,14 +188,20 @@ elif page == "🧠 Analisis Idiom":
                 st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
 elif page == "🗂️ Manajemen Data":
+    
     st.title("🗂️ Dataset dan Model")
     st.markdown("### ✍️ Tambah Contoh Teks")
+    
     with st.form("form_data"):
         input_text = st.text_input("Teks:")
         input_label = st.selectbox("Label", LABELS)
         submit = st.form_submit_button("➕ Simpan")
 
     if submit:
+        if os.path.exists(DEFAULT_CSV): #add
+            df = pd.read_csv(DEFAULT_CSV) 
+            st.success(f"Menampilkan {len(df)} data yang telah ditambahkan.")
+            st.dataframe(df, use_container_width=True)
         if input_text.strip() != "":
             label_val = LABELS.index(input_label)
             df_new = pd.DataFrame([{"text": input_text, "label": label_val}])
