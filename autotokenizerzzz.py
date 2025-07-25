@@ -79,46 +79,36 @@ elif page == "🛡️ Deteksi Teks":
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
+    st.info("Masukkan idiom dan bahasanya dalam tabel di bawah ini, lalu klik **Analisis Idiom**.")
 
-    # Tabel input user (Meaning otomatis)
+    # Tombol Reset Idiom Languages
+    if st.button("🔄 Reset Idiom Languages ke Default"):
+        st.session_state["idiom_languages"] = DEFAULT_IDIOM_LANGUAGES.copy()
+        st.experimental_rerun()
+
+    # Tampilkan idiom bahasa dari session state dalam tabel input user
+    idiom_data = []
+    for lang, idioms in st.session_state["idiom_languages"].items():
+        for idiom in idioms:
+            idiom_data.append({"Language": lang, "Idiom": idiom, "Meaning": ""})
+
     idiom_input_df = st.data_editor(
-        pd.DataFrame({
-            "Language": ["English", "Japanese"],
-            "Idiom": ["Break a leg", "猫の手も借りたい"]
-        }),
-        column_config={
-            "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
-        },
+        pd.DataFrame(idiom_data),
         num_rows="dynamic",
         use_container_width=True,
         key="idiom_input_editor"
     )
 
     if st.button("🔍 Analisis Idiom"):
-        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
+        with st.spinner("Menghitung kemiripan..."):
             try:
                 results = []
                 for _, row in idiom_input_df.iterrows():
                     lang = row["Language"]
                     idiom = row["Idiom"]
-
+                    meaning = row.get("Meaning", "")
                     if not lang or not idiom:
                         continue
-
-                    # Deteksi target language
-                    lang_code = {
-                        "English": "en",
-                        "Indonesian": "id",
-                        "Japanese": "ja",
-                        "Thai": "th",
-                        "Filipino": "tl"
-                    }.get(lang, "en")
-
-                    try:
-                        meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
-                    except Exception:
-                        meaning = "(Translation failed)"
 
                     lang_context = f"Common idioms in {lang}"
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
