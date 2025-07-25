@@ -79,74 +79,76 @@ elif page == "🛡️ Deteksi Teks":
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan bahasanya dalam tabel di bawah ini, lalu klik **Analisis Idiom**.")
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
-    # Tabel input user
+    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Language": ["English", "Japanese"],
-            "Idiom": ["Break a leg", "猫の手も借りたい"],
-            "Meaning": ["Good luck", "Even a cat's help is needed"]
+            "Idiom": ["Break a leg", "猫の手も借りたい"]
         }),
+        column_config={
+            "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
+        },
         num_rows="dynamic",
         use_container_width=True,
         key="idiom_input_editor"
     )
 
-if st.button("🔍 Analisis Idiom"):
-    with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
-        try:
-            results = []
-            for _, row in idiom_input_df.iterrows():
-                lang = row["Language"]
-                idiom = row["Idiom"]
+    if st.button("🔍 Analisis Idiom"):
+        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
+            try:
+                results = []
+                for _, row in idiom_input_df.iterrows():
+                    lang = row["Language"]
+                    idiom = row["Idiom"]
 
-                if not lang or not idiom:
-                    continue
+                    if not lang or not idiom:
+                        continue
 
-                # Deteksi target language untuk translate
-                lang_code = {
-                    "English": "en",
-                    "Indonesian": "id",
-                    "Japanese": "ja",
-                    "Thai": "th",
-                    "Filipino": "tl"
-                }.get(lang, "en")
+                    # Deteksi target language
+                    lang_code = {
+                        "English": "en",
+                        "Indonesian": "id",
+                        "Japanese": "ja",
+                        "Thai": "th",
+                        "Filipino": "tl"
+                    }.get(lang, "en")
 
-                try:
-                    meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
-                except Exception:
-                    meaning = "(Translation failed)"
+                    try:
+                        meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
+                    except Exception:
+                        meaning = "(Translation failed)"
 
-                lang_context = f"Common idioms in {lang}"
-                idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
-                lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
-                sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
-                valid = 1 if sim.item() > 0.3 else -1
+                    lang_context = f"Common idioms in {lang}"
+                    idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+                    lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+                    sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+                    valid = 1 if sim.item() > 0.3 else -1
 
-                reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi tertentu."
-                name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+                    reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi tertentu."
+                    name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
-                results.append({
-                    "Language": lang,
-                    "Idiom": idiom,
-                    "Meaning": meaning,
-                    "Reason": reason,
-                    "Name": name,
-                    "Validated": valid,
-                    "BERT Known Since": "2019"
-                })
+                    results.append({
+                        "Language": lang,
+                        "Idiom": idiom,
+                        "Meaning": meaning,
+                        "Reason": reason,
+                        "Name": name,
+                        "Validated": valid,
+                        "BERT Known Since": "2019"
+                    })
 
-            if results:
-                df_idiom_result = pd.DataFrame(results)
-                st.success("✅ Analisis selesai.")
-                st.dataframe(df_idiom_result, use_container_width=True)
-                df_idiom_result.to_csv("idiom_analysis.csv", index=False)
-            else:
-                st.warning("Tidak ada idiom valid untuk dianalisis.")
+                if results:
+                    df_idiom_result = pd.DataFrame(results)
+                    st.success("✅ Analisis selesai.")
+                    st.dataframe(df_idiom_result, use_container_width=True)
+                    df_idiom_result.to_csv("idiom_analysis.csv", index=False)
+                else:
+                    st.warning("Tidak ada idiom valid untuk dianalisis.")
 
-        except Exception as e:
-            st.error(f"Gagal memuat model atau melakukan analisis: {e}")
+            except Exception as e:
+                st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
 # --- Halaman Manajemen Data ---
 elif page == "🗂️ Manajemen Data":
