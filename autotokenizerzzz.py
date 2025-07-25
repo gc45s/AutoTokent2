@@ -37,7 +37,7 @@ tokenizer, model = load_roberta()
 sbert = load_sbert()
 
 # --- Sidebar Navigation ---
-st.sidebar.title("🧭 Navigasi")
+st.sidebar.title("🛍️ Navigasi")
 page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
 # --- Halaman Dashboard ---
