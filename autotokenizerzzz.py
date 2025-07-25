@@ -6,7 +6,6 @@ import pandas as pd
 import os
 import joblib
 from sentence_transformers import SentenceTransformer, util
-from deep_translator import GoogleTranslator
 
 # Konstanta
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
@@ -46,7 +45,7 @@ if page == "🏠 Dashboard":
     st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
     st.markdown("""
     Selamat datang di aplikasi analisis teks berbasis BERT. 
-    Aplikasi ini memiliki fitur:
+    Fitur:
     - Deteksi konten ofensif dari teks
     - Analisis idiom khas dari berbagai bahasa
     - Manajemen dataset dan pelatihan ulang model
@@ -73,82 +72,65 @@ elif page == "🛡️ Deteksi Teks":
             else:
                 st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# ================================
-# Analisis Idiom berdasarkan Input
-# ================================
+# --- Halaman Analisis Idiom ---
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
+    st.info("Masukkan idiom dan bahasanya dalam tabel di bawah ini, lalu klik **Analisis Idiom**.")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
-
-    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Language": ["English", "Japanese"],
-            "Idiom": ["Break a leg", "猫の手も借りたい"]
+            "Idiom": ["Break a leg", "猫の手も借りたい"],
+            "Meaning": ["Good luck", "Even a cat's help is needed"]
         }),
-        column_config={
-            "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
-        },
         num_rows="dynamic",
         use_container_width=True,
         key="idiom_input_editor"
     )
+    
+    threshold = st.slider("Ambang batas validasi kemiripan (similarity threshold)", 0.0, 1.0, 0.3)
 
     if st.button("🔍 Analisis Idiom"):
-        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
+        with st.spinner("Menghitung kemiripan dan validasi..."):
             try:
                 results = []
                 for _, row in idiom_input_df.iterrows():
                     lang = row["Language"]
                     idiom = row["Idiom"]
-
+                    meaning = row.get("Meaning", "")
                     if not lang or not idiom:
                         continue
-
-                    # Deteksi target language
-                    lang_code = {
-                        "English": "en",
-                        "Indonesian": "id",
-                        "Japanese": "ja",
-                        "Thai": "th",
-                        "Filipino": "tl"
-                    }.get(lang, "en")
-
-                    try:
-                        meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
-                    except Exception:
-                        meaning = "(Translation failed)"
 
                     lang_context = f"Common idioms in {lang}"
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
                     lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
-                    valid = 1 if sim.item() > 0.3 else -1
+                    sim_score = sim.item()
 
-                    reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi tertentu."
+                    validated = "✅ Valid" if sim_score >= threshold else "❌ Tidak Valid"
+                    reason = f"'{idiom}' digunakan dalam konteks {lang.lower()}."
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
                         "Language": lang,
                         "Idiom": idiom,
                         "Meaning": meaning,
+                        "Similarity": round(sim_score, 3),
+                        "Validated": validated,
                         "Reason": reason,
                         "Name": name,
-                        "Validated": valid,
                         "BERT Known Since": "2019"
                     })
 
                 if results:
-                    df_idiom_result = pd.DataFrame(results)
+                    df_result = pd.DataFrame(results)
                     st.success("✅ Analisis selesai.")
-                    st.dataframe(df_idiom_result, use_container_width=True)
-                    df_idiom_result.to_csv("idiom_analysis.csv", index=False)
+                    st.dataframe(df_result, use_container_width=True)
+                    df_result.to_csv("idiom_analysis.csv", index=False)
                 else:
                     st.warning("Tidak ada idiom valid untuk dianalisis.")
-
             except Exception as e:
-                st.error(f"Gagal memuat model atau melakukan analisis: {e}")
+                st.error(f"Gagal memproses analisis idiom: {e}")
 
 # --- Halaman Manajemen Data ---
 elif page == "🗂️ Manajemen Data":
