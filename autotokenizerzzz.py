@@ -4,7 +4,6 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
-import joblib
 from sentence_transformers import SentenceTransformer, util
 
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
