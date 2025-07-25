@@ -79,8 +79,9 @@ elif page == "🛡️ Deteksi Teks":
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' dan 'Reason' akan diisi otomatis.")
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
+    # Tabel input user (Meaning otomatis)
     idiom_input_df = st.data_editor(
         pd.DataFrame({
             "Idiom": ["Break a leg", "猫の手も借りたい"],
@@ -124,7 +125,14 @@ elif page == "🧠 Analisis Idiom":
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     valid = 1 if sim.item() > 0.3 else -1
 
-                    reason = f"'{idiom}' berarti: {meaning}. Contoh penggunaan: '{idiom}' digunakan untuk menggambarkan situasi sesuai maknanya."
+                    reason = f"'{idiom}' berarti: {meaning}."
+                    try:
+                        encoded_ex = tokenizer(meaning, return_tensors="pt", truncation=True)
+                        decoded = tokenizer.decode(encoded_ex['input_ids'][0], skip_special_tokens=True)
+                        example = decoded.capitalize() + "."
+                    except:
+                        example = "(No example generated)"
+
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
@@ -132,6 +140,7 @@ elif page == "🧠 Analisis Idiom":
                         "Idiom": idiom,
                         "Meaning": meaning,
                         "Reason": reason,
+                        "Example": example,
                         "Name": name,
                         "Validated": valid,
                         "BERT Known Since": "2019"
