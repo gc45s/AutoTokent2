@@ -79,16 +79,14 @@ elif page == "🛡️ Deteksi Teks":
 elif page == "🧠 Analisis Idiom":
     st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Auto Translate Meaning** jika perlu, dan lanjutkan dengan **Analisis Idiom**.")
+    st.info("Masukkan idiom dan pilih bahasanya, lalu klik **Analisis Idiom**. Kolom 'Meaning' akan diterjemahkan otomatis.")
 
-    idiom_input_df = st.session_state.get("idiom_input_df", pd.DataFrame({
-        "Idiom": ["Break a leg", "猫の手も借りたい"],
-        "Language": ["English", "Japanese"],
-        "Meaning": ["", ""]
-    }))
-
-    edited_df = st.data_editor(
-        idiom_input_df,
+    # Tabel input user (Meaning otomatis)
+    idiom_input_df = st.data_editor(
+        pd.DataFrame({
+            "Idiom": ["Break a leg", "猫の手も借りたい"],
+            "Language": ["English", "Japanese"]
+        }),
         column_config={
             "Language": st.column_config.SelectboxColumn("Language", options=list(IDIOM_LANGUAGES.keys()))
         },
@@ -98,34 +96,30 @@ elif page == "🧠 Analisis Idiom":
     )
 
     if st.button("🌐 Auto Translate Meaning"):
-        for i, row in edited_df.iterrows():
+        for i in range(len(idiom_input_df)):
+            lang = idiom_input_df.loc[i, "Language"]
+            idiom = idiom_input_df.loc[i, "Idiom"]
             lang_code = {
                 "English": "en",
                 "Indonesian": "id",
                 "Japanese": "ja",
                 "Thai": "th",
                 "Filipino": "tl"
-            }.get(row["Language"], "en")
-
+            }.get(lang, "en")
             try:
-                translated = GoogleTranslator(source='auto', target=lang_code).translate(row["Idiom"])
-            except Exception:
-                translated = "(Translation failed)"
-
-            edited_df.at[i, "Meaning"] = translated
-
-        st.session_state["idiom_input_df"] = edited_df
-        st.success("✅ Meaning berhasil diterjemahkan.")
+                idiom_input_df.loc[i, "Meaning"] = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
+            except:
+                idiom_input_df.loc[i, "Meaning"] = "(Translation failed)"
         st.experimental_rerun()
 
     if st.button("🔍 Analisis Idiom"):
-        with st.spinner("Menghitung kemiripan dan membuat analisis..."):
+        with st.spinner("Menghitung kemiripan dan menerjemahkan..."):
             try:
                 results = []
-                for _, row in edited_df.iterrows():
+                for _, row in idiom_input_df.iterrows():
                     lang = row["Language"]
                     idiom = row["Idiom"]
-                    meaning = row["Meaning"]
+                    meaning = row.get("Meaning", "")
 
                     if not lang or not idiom:
                         continue
@@ -136,12 +130,12 @@ elif page == "🧠 Analisis Idiom":
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     valid = 1 if sim.item() > 0.3 else -1
 
-                    reason = f"'{idiom}' berarti: {meaning}."
+                    reason = f"'{idiom}' berarti: {meaning}. Contoh: '{idiom}' digunakan dalam percakapan sehari-hari."
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
-                        "Idiom": idiom,
                         "Language": lang,
+                        "Idiom": idiom,
                         "Meaning": meaning,
                         "Reason": reason,
                         "Name": name,
