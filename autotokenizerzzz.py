@@ -4,7 +4,6 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
-import joblib
 from sentence_transformers import SentenceTransformer, util
 from deep_translator import GoogleTranslator
 
@@ -21,6 +20,20 @@ IDIOM_LANGUAGES = {
     "Thai": ["จับปลาสองมือ", "แมวไม่อยู่หนูร่าเริง"],
     "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
 }
+
+# Cache terjemahan runtime
+translation_cache = {}
+
+def translate_text(text, target_lang):
+    key = (text, target_lang)
+    if key in translation_cache:
+        return translation_cache[key]
+    try:
+        translation = GoogleTranslator(source='auto', target=target_lang).translate(text)
+    except Exception:
+        translation = "(Translation failed)"
+    translation_cache[key] = translation
+    return translation
 
 # Caching model
 @st.cache_resource
@@ -106,7 +119,7 @@ elif page == "🧠 Analisis Idiom":
                     if not lang or not idiom:
                         continue
 
-                    # Deteksi target language
+                    # Map ke kode bahasa untuk GoogleTranslator
                     lang_code = {
                         "English": "en",
                         "Indonesian": "id",
@@ -115,10 +128,7 @@ elif page == "🧠 Analisis Idiom":
                         "Filipino": "tl"
                     }.get(lang, "en")
 
-                    try:
-                        meaning = GoogleTranslator(source='auto', target=lang_code).translate(idiom)
-                    except Exception:
-                        meaning = "(Translation failed)"
+                    meaning = translate_text(idiom, lang_code)
 
                     lang_context = f"Common idioms in {lang}"
                     idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
