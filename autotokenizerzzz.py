@@ -72,33 +72,65 @@ elif page == "🛡️ Deteksi Teks":
             else:
                 st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-# --- Halaman Analisis Idiom ---
-elif page == "🧠 Analisis Idiom":
-    st.title("🧠 Analisis Idiom Berdasarkan Bahasa")
-    results = []
-    for lang, idiom_list in IDIOM_LANGUAGES.items():
-        for idiom in idiom_list:
-            lang_context = f"Common idioms in {lang}"
-            idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
-            lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
-            sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
-            valid = 1 if sim.item() > 0.3 else -1
-            reason = f"'{idiom}' digunakan dalam konteks {lang.lower()}."
-            name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+# ================================
+# Analisis Idiom berdasarkan Input
+# ================================
+st.markdown("## 🧠 Analisis Idiom Berdasarkan Data Input")
 
-            results.append({
-                "Language": lang,
-                "Idiom": idiom,
-                "Reason": reason,
-                "Name": name,
-                "Similarity Score": round(sim.item(), 2),
-                "Valid": valid
-            })
+st.info("Masukkan idiom dan bahasanya dalam tabel di bawah ini, lalu klik **Analisis Idiom**.")
 
-    df_idioms = pd.DataFrame(results)
-    st.dataframe(df_idioms)
-    df_idioms.to_csv("idiom_analysis.csv", index=False)
-    st.success("📄 Analisis idiom selesai dan disimpan.")
+# Tabel input user
+idiom_input_df = st.data_editor(
+    pd.DataFrame({
+        "Language": ["English", "Japanese"],
+        "Idiom": ["Break a leg", "猫の手も借りたい"]
+    }),
+    num_rows="dynamic",
+    use_container_width=True,
+    key="idiom_input_editor"
+)
+
+if st.button("🔍 Analisis Idiom"):
+    with st.spinner("Menghitung kemiripan..."):
+        try:
+            from sentence_transformers import SentenceTransformer, util
+            sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+
+            results = []
+            for _, row in idiom_input_df.iterrows():
+                lang = row["Language"]
+                idiom = row["Idiom"]
+                if not lang or not idiom:
+                    continue
+
+                lang_context = f"Common idioms in {lang}"
+                idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+                lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+                sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+                valid = 1 if sim.item() > 0.3 else -1
+
+                reason = f"'{idiom}' digunakan dalam konteks {lang.lower()} untuk menggambarkan situasi tertentu."
+                name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
+
+                results.append({
+                    "Language": lang,
+                    "Idiom": idiom,
+                    "Reason": reason,
+                    "Name": name,
+                    "Validated": valid,
+                    "BERT Known Since": "2019"
+                })
+
+            if results:
+                df_idiom_result = pd.DataFrame(results)
+                st.success("✅ Analisis selesai.")
+                st.dataframe(df_idiom_result, use_container_width=True)
+                df_idiom_result.to_csv("idiom_analysis.csv", index=False)
+            else:
+                st.warning("Tidak ada idiom valid untuk dianalisis.")
+
+        except Exception as e:
+            st.error(f"Gagal memuat model atau melakukan analisis: {e}")
 
 # --- Halaman Manajemen Data ---
 elif page == "🗂️ Manajemen Data":
