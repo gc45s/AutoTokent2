@@ -7,12 +7,21 @@ import os
 import joblib
 from sentence_transformers import SentenceTransformer, util
 
+# Konstanta
 MODEL_NAME = "cardiffnlp/twitter-roberta-base-offensive"
 DEFAULT_CSV = "user_training_data.csv"
 DEFAULT_MODEL_PATH = "offensive_model.pkl"
 
-st.title("🛡️ Deteksi Konten Ofensif (Roberta Twitter)")
+LABELS = ["not-offensive", "offensive"]
+IDIOM_LANGUAGES = {
+    "English": ["Break a leg", "Piece of cake"],
+    "Indonesian": ["Buah bibir", "Meja hijau"],
+    "Japanese": ["猫の手も借りたい", "猿も木から落ちる"],
+    "Thai": ["จับปลาสองมือ", "แมวไม่อยู่หนูร่าเริง"],
+    "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
+}
 
+# Caching model
 @st.cache_resource
 def load_roberta():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -20,87 +29,101 @@ def load_roberta():
     model.eval()
     return tokenizer, model
 
+@st.cache_resource
+def load_sbert():
+    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
 tokenizer, model = load_roberta()
+sbert = load_sbert()
 
-LABELS = ["not-offensive", "offensive"]
+# --- Sidebar Navigation ---
+st.sidebar.title("🧭 Navigasi")
+page = st.sidebar.radio("Pilih Halaman", ["🏠 Dashboard", "🛡️ Deteksi Teks", "🧠 Analisis Idiom", "🗂️ Manajemen Data"])
 
-# Optional: Tambah data baru
-st.markdown("### ✍️ Tambah Contoh Data")
-with st.form("add_example"):
-    text_input = st.text_input("Masukkan teks:")
-    label_input = st.selectbox("Label", LABELS)
-    submit_btn = st.form_submit_button("Simpan ke CSV")
+# --- Halaman Dashboard ---
+if page == "🏠 Dashboard":
+    st.title("📊 Dashboard Aplikasi Deteksi Ofensif dan Idiom")
+    st.markdown("""
+    Selamat datang di aplikasi analisis teks berbasis BERT. 
+    Aplikasi ini memiliki fitur:
+    - Deteksi konten ofensif dari teks
+    - Analisis idiom khas dari berbagai bahasa
+    - Manajemen dataset dan pelatihan ulang model
 
-if submit_btn:
-    if text_input.strip() != "":
-        label_val = LABELS.index(label_input)
-        df_new = pd.DataFrame([{"text": text_input, "label": label_val}])
-        if os.path.exists(DEFAULT_CSV):
-            df_old = pd.read_csv(DEFAULT_CSV)
-            df_combined = pd.concat([df_old, df_new], ignore_index=True).drop_duplicates()
+    > Powered by: `cardiffnlp/twitter-roberta-base-offensive` dan `Sentence-BERT`
+    """)
+
+# --- Halaman Deteksi ---
+elif page == "🛡️ Deteksi Teks":
+    st.title("🛡️ Deteksi Konten Ofensif")
+    input_text = st.text_area("Masukkan teks:")
+    if st.button("🔍 Deteksi"):
+        if input_text.strip() == "":
+            st.warning("Teks tidak boleh kosong.")
         else:
-            df_combined = df_new
-        df_combined.to_csv(DEFAULT_CSV, index=False)
-        st.success("✅ Data disimpan.")
+            encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                output = model(**encoded)
+            probs = torch.nn.functional.softmax(output.logits, dim=-1).squeeze().numpy()
+            pred = np.argmax(probs)
 
-        # Analisis idiom otomatis dari input
-        sbert = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-        idiom_emb = sbert.encode(text_input, convert_to_tensor=True)
+            if pred == 1:
+                st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
+            else:
+                st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
 
-        lang_idioms = {
-            "English": ["Break a leg", "Hit the sack", "Let the cat out of the bag"],
-            "Indonesian": ["Banting tulang", "Buah tangan", "Naik darah"],
-            "Japanese": ["猫の手も借りたい", "猿も木から落ちる"],
-            "Thai": ["น้ำขึ้นให้รีบตัก", "จับปลาสองมือ"],
-            "Filipino": ["Itaga mo sa bato", "Nagbibilang ng poste"]
-        }
+# --- Halaman Analisis Idiom ---
+elif page == "🧠 Analisis Idiom":
+    st.title("🧠 Analisis Idiom Berdasarkan Bahasa")
+    results = []
+    for lang, idiom_list in IDIOM_LANGUAGES.items():
+        for idiom in idiom_list:
+            lang_context = f"Common idioms in {lang}"
+            idiom_emb = sbert.encode(idiom, convert_to_tensor=True)
+            lang_emb = sbert.encode(lang_context, convert_to_tensor=True)
+            sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
+            valid = 1 if sim.item() > 0.3 else -1
+            reason = f"'{idiom}' digunakan dalam konteks {lang.lower()}."
+            name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
-        idiom_results = []
+            results.append({
+                "Language": lang,
+                "Idiom": idiom,
+                "Reason": reason,
+                "Name": name,
+                "Similarity Score": round(sim.item(), 2),
+                "Valid": valid
+            })
 
-        for lang, phrases in lang_idioms.items():
-            for phrase in phrases:
-                phrase_emb = sbert.encode(phrase, convert_to_tensor=True)
-                sim = util.pytorch_cos_sim(idiom_emb, phrase_emb).item()
+    df_idioms = pd.DataFrame(results)
+    st.dataframe(df_idioms)
+    df_idioms.to_csv("idiom_analysis.csv", index=False)
+    st.success("📄 Analisis idiom selesai dan disimpan.")
 
-                if sim > 0.6:
-                    idiom_results.append({
-                        "Language": lang,
-                        "Idiom": phrase,
-                        "Similarity": f"{sim:.2f}",
-                        "Matched With Input": text_input
-                    })
+# --- Halaman Manajemen Data ---
+elif page == "🗂️ Manajemen Data":
+    st.title("🗂️ Dataset dan Model")
+    st.markdown("### ✍️ Tambah Contoh Teks")
+    with st.form("form_data"):
+        input_text = st.text_input("Teks:")
+        input_label = st.selectbox("Label", LABELS)
+        submit = st.form_submit_button("➕ Simpan")
 
-        if idiom_results:
-            df_matches = pd.DataFrame(idiom_results)
-            st.markdown("### 🧠 Hasil Analisis Idiom dari Input")
-            st.dataframe(df_matches)
+    if submit:
+        if input_text.strip() != "":
+            label_val = LABELS.index(input_label)
+            df_new = pd.DataFrame([{"text": input_text, "label": label_val}])
+            if os.path.exists(DEFAULT_CSV):
+                df_old = pd.read_csv(DEFAULT_CSV)
+                df_combined = pd.concat([df_old, df_new]).drop_duplicates()
+            else:
+                df_combined = df_new
+            df_combined.to_csv(DEFAULT_CSV, index=False)
+            st.success("✅ Data ditambahkan.")
         else:
-            st.info("🔎 Tidak ditemukan idiom yang relevan dengan input.")
+            st.warning("Teks tidak boleh kosong.")
 
-    else:
-        st.warning("Teks tidak boleh kosong.")
-
-# Reset CSV dan PKL
-if st.button("🧹 Reset Dataset dan Model"):
-    if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
-    if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
-    st.success("✅ Dataset dan model berhasil direset.")
-
-# Prediksi
-st.markdown("### 🔍 Cek Apakah Pesan Ofensif")
-input_text = st.text_area("Masukkan teks untuk diperiksa:")
-
-if st.button("Deteksi"):
-    if input_text.strip() == "":
-        st.warning("Teks tidak boleh kosong.")
-    else:
-        encoded = tokenizer(input_text, return_tensors="pt", truncation=True)
-        with torch.no_grad():
-            output = model(**encoded)
-        probs = torch.nn.functional.softmax(output.logits, dim=-1).squeeze().numpy()
-        pred = np.argmax(probs)
-
-        if pred == 1:
-            st.error(f"❌ Ofensif ({probs[pred]:.2f} confidence)")
-        else:
-            st.success(f"✅ Tidak ofensif ({probs[pred]:.2f} confidence)")
+    if st.button("🧹 Reset Dataset & Model"):
+        if os.path.exists(DEFAULT_CSV): os.remove(DEFAULT_CSV)
+        if os.path.exists(DEFAULT_MODEL_PATH): os.remove(DEFAULT_MODEL_PATH)
+        st.success("🗑️ Dataset dan model dihapus.")
