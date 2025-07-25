@@ -1,6 +1,6 @@
 import streamlit as st
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import numpy as np
 import pandas as pd
 import os
@@ -34,13 +34,8 @@ def load_roberta():
 def load_sbert():
     return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-@st.cache_resource
-def load_bert_text_gen():
-    return pipeline("text-generation", model="bert-base-uncased", tokenizer="bert-base-uncased")
-
 tokenizer, model = load_roberta()
 sbert = load_sbert()
-text_generator = load_bert_text_gen()
 
 # --- Sidebar Navigation ---
 st.sidebar.title("🛍️ Navigasi")
@@ -130,21 +125,14 @@ elif page == "🧠 Analisis Idiom":
                     sim = util.pytorch_cos_sim(idiom_emb, lang_emb)
                     valid = 1 if sim.item() > 0.3 else -1
 
-                    reason = f"'{idiom}' berarti: {meaning}. Digunakan untuk menggambarkan situasi yang relevan dalam konteks budaya {lang.lower()}."
-
-                    try:
-                        example_output = text_generator(f"Example of the idiom '{idiom}' meaning {meaning}:", max_length=40, num_return_sequences=1)[0]['generated_text']
-                    except:
-                        example_output = "(No example available)"
-
+                    reason = f"Idiom '{idiom}' berarti '{meaning}', yang biasa digunakan untuk menggambarkan situasi tertentu dalam budaya {lang}."
                     name = f"{lang[:2]}-{idiom.split()[0].capitalize()}"
 
                     results.append({
-                        "Language": lang,
                         "Idiom": idiom,
+                        "Language": lang,
                         "Meaning": meaning,
                         "Reason": reason,
-                        "Example": example_output,
                         "Name": name,
                         "Validated": valid,
                         "BERT Known Since": "2019"
