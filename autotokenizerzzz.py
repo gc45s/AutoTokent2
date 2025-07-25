@@ -196,12 +196,16 @@ elif page == "🗂️ Manajemen Data":
         input_text = st.text_input("Teks:")
         input_label = st.selectbox("Label", LABELS)
         submit = st.form_submit_button("➕ Simpan")
-
+            # Tampilkan data yang sudah ada di awal halaman manajemen
+    if os.path.exists(DEFAULT_CSV):
+        df = pd.read_csv(DEFAULT_CSV)
+        st.success(f"📄 {len(df)} data tersedia di dataset.")
+        st.dataframe(df, use_container_width=True)
     if submit:
-        if os.path.exists(DEFAULT_CSV): #add
-            df = pd.read_csv(DEFAULT_CSV) 
-            st.success(f"Menampilkan {len(df)} data yang telah ditambahkan.")
-            st.dataframe(df, use_container_width=True)
+     #   if os.path.exists(DEFAULT_CSV): #add
+      #      df = pd.read_csv(DEFAULT_CSV) 
+      #      st.success(f"Menampilkan {len(df)} data yang telah ditambahkan.")
+     #       st.dataframe(df, use_container_width=True)
         if input_text.strip() != "":
             label_val = LABELS.index(input_label)
             df_new = pd.DataFrame([{"text": input_text, "label": label_val}])
