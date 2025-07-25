@@ -10,3 +10,4 @@ requests
 joblib
 sentence-transformers
 deep-translator
+psutil
